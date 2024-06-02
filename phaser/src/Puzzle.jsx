@@ -90,7 +90,7 @@ const Puzzle = () => {
           Solve the Puzzle
         </Typography>
         {puzzle && <Chessboard position={puzzle.fen} />}
-        {/* Add any additional puzzle information or controls here */}
+        
       </Box>
     );
   };
