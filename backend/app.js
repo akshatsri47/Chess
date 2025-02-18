@@ -3,100 +3,90 @@ import { Server } from 'socket.io';
 import { v4 as uuidV4 } from 'uuid';
 import http from 'http';
 
-const app = express(); // initialize express
+const app = express(); // Initialize Express
+
+// Allow requests from any origin (important for EC2)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  next();
+});
 
 const server = http.createServer(app);
 
-// set port to value received from environment variable or 8080 if null
+// Set port from environment variable or default to 8080
 const port = process.env.PORT || 8080;
 
-// upgrade http server to websocket server
+// Bind server to all network interfaces (required for EC2)
 const io = new Server(server, {
-  cors: { origin: '*' }, // allow connection from any origin
+  cors: { origin: '*' },
 });
+
 const rooms = new Map();
 
-// io.connection
 io.on('connection', (socket) => {
-  // socket refers to the client socket that just got connected.
-  // each socket is assigned an id
-  console.log(socket.id, 'connected');
+  console.log(`${socket.id} connected`);
 
   socket.on('username', (username) => {
-    console.log('username:', username);
+    console.log('Username:', username);
     socket.data.username = username;
   });
 
-  socket.on('createRoom', async (callback) => { // callback here refers to the callback function from the client passed as data
-    const roomId = uuidV4(); // <- 1 create a new uuid
-    await socket.join(roomId); // <- 2 make creating user join the room
-	 
-    // set roomId as a key and roomData including players as value in the map
-    rooms.set(roomId, { // <- 3
-      roomId,
-      players: [{ id: socket.id, username: socket.data?.username }]
-    });
-    // returns Map(1){'2b5b51a9-707b-42d6-9da8-dc19f863c0d0' => [{id: 'socketid', username: 'username1'}]}
+  socket.on('createRoom', async (callback) => {
+    const roomId = uuidV4();
+    await socket.join(roomId);
 
-    callback(roomId); // <- 4 respond with roomId to client by calling the callback function from the client
+    rooms.set(roomId, {
+      roomId,
+      players: [{ id: socket.id, username: socket.data?.username }],
+    });
+
+    callback(roomId);
   });
 
   socket.on('joinRoom', async (args, callback) => {
-    // check if room exists and has a player waiting
     const room = rooms.get(args.roomId);
     let error, message;
-  
-    if (!room) { // if room does not exist
+
+    if (!room) {
       error = true;
-      message = 'room does not exist';
-    } else if (room.length <= 0) { // if room is empty set appropriate message
+      message = 'Room does not exist';
+    } else if (room.players.length === 0) {
       error = true;
-      message = 'room is empty';
-    } else if (room.length >= 2) { // if room is full
+      message = 'Room is empty';
+    } else if (room.players.length >= 2) {
       error = true;
-      message = 'room is full'; // set message to 'room is full'
+      message = 'Room is full';
     }
 
     if (error) {
-      // if there's an error, check if the client passed a callback,
-      // call the callback (if it exists) with an error object and exit or 
-      // just exit if the callback is not given
-
-      if (callback) { // if user passed a callback, call it with an error payload
-        callback({
-          error,
-          message
-        });
-      }
-
-      return; // exit
+      return callback && callback({ error, message });
     }
 
-    await socket.join(args.roomId); // make the joining client join the room
-
-    // add the joining user's data to the list of players in the room
-    const roomUpdate = {
+    await socket.join(args.roomId);
+    
+    const updatedRoom = {
       ...room,
-      players: [
-        ...room.players,
-        { id: socket.id, username: socket.data?.username },
-      ],
+      players: [...room.players, { id: socket.id, username: socket.data?.username }],
     };
 
-    rooms.set(args.roomId, roomUpdate);
-
-    callback(roomUpdate); // respond to the client with the room details.
-
-    // emit an 'opponentJoined' event to the room to tell the other player that an opponent has joined
-    socket.to(args.roomId).emit('opponentJoined', roomUpdate);
+    rooms.set(args.roomId, updatedRoom);
+    callback(updatedRoom);
+    
+    socket.to(args.roomId).emit('opponentJoined', updatedRoom);
   });
 
   socket.on('move', (data) => {
-    // emit to all sockets in the room except the emitting socket.
     socket.to(data.room).emit('move', data.move);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`${socket.id} disconnected`);
   });
 });
 
-server.listen(port, () => {
-  console.log(`listening on *:${port}`);
+// Listen on all available interfaces (important for EC2)
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Server is running on port ${port}`);
 });
