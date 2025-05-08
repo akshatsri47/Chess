@@ -1,12 +1,8 @@
 pipeline {
     agent any
 
-    tools {
-        nodejs "NodeJS 18" // Add this version via Jenkins > Global Tool Configuration
-    }
-
     environment {
-        DOCKER_BUILDKIT = '1'
+        COMPOSE_CMD = 'docker-compose'
     }
 
     stages {
@@ -16,36 +12,29 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Build with Docker Compose') {
             steps {
-                sh 'npm install --prefix client'
-                sh 'npm install --prefix server'
+                script {
+                    sh "sudo ${COMPOSE_CMD} build"
+                }
             }
         }
 
-        stage('Lint & Build') {
+        stage('Run with Docker Compose') {
             steps {
-                sh 'npm run build --prefix client'
+                script {
+                    sh "sudo ${COMPOSE_CMD} up -d"
+                }
             }
         }
+    }
 
-        stage('Run Tests') {
-            steps {
-                // Add your test commands if any
-                echo 'No tests configured yet'
-            }
+    post {
+        success {
+            echo 'Chess app built and running successfully!'
         }
-
-        stage('Docker Build') {
-            steps {
-                sh 'docker build -t chess-app .'
-            }
-        }
-
-        stage('Deploy (Optional)') {
-            steps {
-                echo 'Add deployment steps here if needed (e.g., to AWS, EC2, etc.)'
-            }
+        failure {
+            echo 'Something went wrong. Check logs.'
         }
     }
 }
