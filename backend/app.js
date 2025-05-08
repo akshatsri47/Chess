@@ -16,7 +16,7 @@ app.use((req, res, next) => {
 const server = http.createServer(app);
 
 // Set port from environment variable or default to 8080
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 8181;
 
 // Bind server to all network interfaces (required for EC2)
 const io = new Server(server, {

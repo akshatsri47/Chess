@@ -8,6 +8,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-EXPOSE 8080
+EXPOSE 8181
 CMD ["node", "app.js"]
 
