@@ -15,7 +15,7 @@ pipeline {
         stage('Build with Docker Compose') {
             steps {
                 script {
-                    sh "sudo ${COMPOSE_CMD} build"
+                    sh "${COMPOSE_CMD} build"
                 }
             }
         }
@@ -23,7 +23,7 @@ pipeline {
         stage('Run with Docker Compose') {
             steps {
                 script {
-                    sh "sudo ${COMPOSE_CMD} up -d"
+                    sh "${COMPOSE_CMD} up -d"
                 }
             }
         }
