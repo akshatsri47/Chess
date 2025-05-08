@@ -9,7 +9,7 @@ const getSocketUrl = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   
   // Use port 8080 for the backend WebSocket
-  return `${protocol}//${host}:8080`;
+  return `${protocol}//${host}:8081`;
 };
 
 // Initialize socket connection

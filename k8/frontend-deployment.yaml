@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5173
+          env:
+            - name: REACT_APP_WEBSOCKET_URL
+              value: "ws://192.168.49.2:30080"
+          # Add an init container to get the Minikube IP
+      initContainers:
+        - name: init-minikube-ip
+          image: alpine/curl:latest
+          command: ['sh', '-c', "MINIKUBE_IP=$(minikube ip) && export MINIKUBE_IP"]
