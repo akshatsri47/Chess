@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    triggers {
+        githubPush()
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -12,15 +16,16 @@ pipeline {
                 sh 'docker-compose build'
             }
         }
-        stage('Terraform') {
+        stage('Restart App') {
             steps {
-                sh 'terraform init && terraform apply -auto-approve'
+                sh 'docker-compose up -d'
             }
         }
     }
+
     post {
         failure {
-            echo 'Deployment failed.'
+            echo 'Build failed.'
         }
     }
 }
