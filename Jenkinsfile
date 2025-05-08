@@ -3,27 +3,32 @@ pipeline {
 
     environment {
         COMPOSE_CMD = 'docker-compose'
+        TF_DIR = 'terraform'
+        AWS_REGION = 'us-east-1' // change to your region
     }
 
     stages {
-        stage('Clone Repository') {
+        stage('Checkout') {
             steps {
                 git 'https://github.com/akshatsri47/Chess.git'
             }
         }
 
-        stage('Build with Docker Compose') {
+        stage('Docker Build') {
             steps {
-                script {
-                    sh "${COMPOSE_CMD} build"
-                }
+                sh "${COMPOSE_CMD} build"
             }
         }
 
-        stage('Run with Docker Compose') {
+        stage('Terraform Init & Apply') {
+            environment {
+                AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
+                AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+            }
             steps {
-                script {
-                    sh "${COMPOSE_CMD} up -d"
+                dir("${TF_DIR}") {
+                    sh 'terraform init'
+                    sh 'terraform apply -auto-approve'
                 }
             }
         }
@@ -31,10 +36,10 @@ pipeline {
 
     post {
         success {
-            echo 'Chess app built and running successfully!'
+            echo 'Deployment complete.'
         }
         failure {
-            echo 'Something went wrong. Check logs.'
+            echo 'Deployment failed.'
         }
     }
 }
