@@ -27,8 +27,10 @@ pipeline {
             }
             steps {
                 dir("${TF_DIR}") {
+                    sh 'cd terraform'
                     sh 'terraform init'
                     sh 'terraform apply -auto-approve'
+                    sh 'cd ..'
                 }
             }
         }
