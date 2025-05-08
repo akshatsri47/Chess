@@ -27,10 +27,8 @@ pipeline {
             }
             steps {
                 dir("${TF_DIR}") {
-                    sh 'cd terraform'
-                    sh 'terraform init'
-                    sh 'terraform apply -auto-approve'
-                    sh 'cd ..'
+                    sh 'terraform -chdir=terraform/ init'
+                    sh 'terraform -chdir=terraform/ apply -auto-approve'
                 }
             }
         }
