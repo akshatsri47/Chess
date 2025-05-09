@@ -8,6 +8,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-EXPOSE 8081
+<<<<<<< HEAD:backend/dockerfile
+
+=======
+EXPOSE 8181
+>>>>>>> bb69d0a0560ad705d3598cda5fb9ff9a8b34b4d7:backend/Dockerfile
 CMD ["node", "app.js"]
 
