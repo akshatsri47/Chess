@@ -11,12 +11,21 @@ services:
       - "5173:5173"
     restart: unless-stopped
     environment:
+<<<<<<< HEAD
       - REACT_APP_WEBSOCKET_URL=${WEBSOCKET_URL:-ws://localhost:8181}
+=======
+      - REACT_APP_WEBSOCKET_URL=${WEBSOCKET_URL:-ws://localhost:8080}
+>>>>>>> parent of a37dc8b (just something)
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
+<<<<<<< HEAD
       - "8181:8181"
     restart: unless-stopped
+=======
+      - "8080:8080"
+    restart: unless-stopped
+>>>>>>> parent of a37dc8b (just something)
