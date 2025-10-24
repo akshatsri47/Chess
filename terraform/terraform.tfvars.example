@@ -1,0 +1,18 @@
+# Copy this file to terraform.tfvars and fill in your values
+
+# AWS Configuration
+aws_access_key = "your-aws-access-key"
+aws_secret_key = "your-aws-secret-key"
+region        = "us-east-1"
+
+# Environment Configuration
+environment   = "dev"  # dev, staging, or prod
+instance_type = "t2.micro"
+volume_size   = 20
+
+# SSH Key (generate with: ssh-keygen -t rsa -b 4096 -C "your-email@example.com")
+public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQ... your-email@example.com"
+
+# Git Configuration
+git_repo = "https://github.com/akshatsri47/Chess.git"
+branch   = "main"
