@@ -62,8 +62,6 @@ resource "aws_security_group" "chess_sg" {
   }
 }
 
-# No SSH key pair needed - using EC2 Instance Connect
-
 # IAM Role for EC2 Instance
 resource "aws_iam_role" "chess_instance_role" {
   name = "chess-${var.environment}-instance-role"
@@ -90,7 +88,7 @@ resource "aws_iam_role" "chess_instance_role" {
 # Attach SSM policy to the role
 resource "aws_iam_role_policy_attachment" "chess_ssm_policy" {
   role       = aws_iam_role.chess_instance_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  policy_arn = "arn:aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # Instance profile
@@ -111,11 +109,34 @@ resource "aws_instance" "chess_app" {
   vpc_security_group_ids = [aws_security_group.chess_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.chess_instance_profile.name
 
-  user_data = templatefile("${path.module}/user_data.sh", {
-    environment = var.environment
-    git_repo    = var.git_repo
-    branch      = var.branch
-  })
+  user_data = <<-EOF
+    #!/bin/bash
+    set -e
+
+    # Update system
+    sudo yum update -y
+    sudo yum install -y docker git
+
+    # Start Docker
+    sudo systemctl start docker
+    sudo systemctl enable docker
+
+    # Install Docker Compose
+    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+
+    # Clone your Chess repository
+    git clone ${var.git_repo} /home/ec2-user/Chess
+    cd /home/ec2-user/Chess
+    git checkout ${var.branch}
+
+    # Build and start the application
+    sudo /usr/local/bin/docker-compose build
+    sudo /usr/local/bin/docker-compose up -d
+
+    # Log completion
+    echo "$(date): User data script completed" >> /var/log/user-data.log
+  EOF
 
   root_block_device {
     volume_type = "gp3"
@@ -141,4 +162,23 @@ resource "aws_eip" "chess_eip" {
   }
 }
 
+# Outputs
+output "instance_ip" {
+  description = "Public IP address of the Chess application instance"
+  value       = aws_eip.chess_eip.public_ip
+}
 
+output "instance_id" {
+  description = "ID of the Chess application instance"
+  value       = aws_instance.chess_app.id
+}
+
+output "frontend_url" {
+  description = "Frontend URL"
+  value       = "http://${aws_eip.chess_eip.public_ip}:5173"
+}
+
+output "backend_websocket_url" {
+  description = "Backend WebSocket URL"
+  value       = "ws://${aws_eip.chess_eip.public_ip}:8181"
+}
