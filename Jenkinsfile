@@ -6,7 +6,7 @@ pipeline {
         TF_VAR_region = 'us-east-1'
         TF_VAR_aws_access_key = credentials('aws-access-key')
         TF_VAR_aws_secret_key = credentials('aws-secret-key')
-        WEBSOCKET_URL = 'ws://${INSTANCE_IP}:8181'
+        // WEBSOCKET_URL will be set dynamically after getting INSTANCE_IP
     }
 
     parameters {
@@ -47,7 +47,6 @@ pipeline {
         stage('Setup Tools') {
             steps {
                 script {
-                    // Install Terraform if not present
                     bat '''
                         where terraform >nul 2>&1
                         if %errorlevel% neq 0 (
@@ -73,7 +72,7 @@ pipeline {
         stage('Terraform Plan') {
             steps {
                 script {
-                    if (params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') {
+                    if (params.DEPLOYMENT_TYPE in ['infrastructure-only', 'full-deployment']) {
                         dir('terraform') {
                             if (params.DESTROY_INFRASTRUCTURE) {
                                 bat '''
@@ -95,17 +94,14 @@ pipeline {
         stage('Terraform Apply') {
             steps {
                 script {
-                    if (params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') {
+                    if (params.DEPLOYMENT_TYPE in ['infrastructure-only', 'full-deployment']) {
                         dir('terraform') {
                             if (params.DESTROY_INFRASTRUCTURE) {
-                                bat '''
-                                    terraform apply -auto-approve destroy.tfplan
-                                '''
+                                bat 'terraform apply -auto-approve destroy.tfplan'
                             } else {
                                 bat '''
                                     terraform apply -auto-approve tfplan
-                                    
-                                    REM Get instance IP and set environment variable
+                                    REM Get instance IP and save to environment
                                     for /f "tokens=*" %%i in ('terraform output -raw instance_ip') do set INSTANCE_IP=%%i
                                     echo INSTANCE_IP=%INSTANCE_IP% > ..\\.env
                                     echo Instance IP: %INSTANCE_IP%
@@ -120,22 +116,32 @@ pipeline {
         stage('Wait for Instance') {
             steps {
                 script {
-                    if ((params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        // Load instance IP from terraform output
+                    if ((params.DEPLOYMENT_TYPE in ['infrastructure-only', 'full-deployment']) && !params.DESTROY_INFRASTRUCTURE) {
+                        // Load instance IP
                         def instanceIp = bat(
                             script: 'cd terraform && terraform output -raw instance_ip',
                             returnStdout: true
                         ).trim()
                         
-                        // Clean up the IP (remove any command prompt artifacts)
+                        // Clean IP
                         instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
-                        
                         env.INSTANCE_IP = instanceIp
+                        env.WEBSOCKET_URL = "ws://${instanceIp}:8181"
                         echo "Waiting for instance ${instanceIp} to be ready..."
-                        
-                        // Wait for instance to be ready using PowerShell with the actual IP
+
+                        // Fixed PowerShell loop
                         bat """
-                            powershell -Command "for (`$i=0; `$i -lt 30; `$i++) { try { Invoke-WebRequest -Uri 'http://${instanceIp}:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance to start... (attempt ' + (`$i+1) + '/30)'; Start-Sleep 10 } }"
+                            powershell -Command ^
+                            "\$ErrorActionPreference = 'SilentlyContinue'; ^
+                            for (\$i=0; \$i -lt 30; \$i++) { ^
+                                try { ^
+                                    Invoke-WebRequest -Uri \\"http://${instanceIp}:5173\\" -TimeoutSec 5 | Out-Null; ^
+                                    Write-Host 'Instance is ready!'; break ^
+                                } catch { ^
+                                    Write-Host ('Waiting for instance to start... (attempt ' + (\$i+1) + '/30)'); ^
+                                    Start-Sleep -Seconds 10 ^
+                                } ^
+                            }"
                         """
                     }
                 }
@@ -145,8 +151,7 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 script {
-                    if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        // Build and tag images with commit hash
+                    if ((params.DEPLOYMENT_TYPE in ['application-only', 'full-deployment']) && !params.DESTROY_INFRASTRUCTURE) {
                         bat '''
                             docker-compose build --no-cache
                             docker tag chess_frontend:latest chess_frontend:%GIT_COMMIT_SHORT%
@@ -160,35 +165,24 @@ pipeline {
         stage('Deploy Application') {
             steps {
                 script {
-                    if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        // Load instance IP and ID from terraform output
-                        def instanceIp = bat(
-                            script: 'cd terraform && terraform output -raw instance_ip',
-                            returnStdout: true
-                        ).trim()
+                    if ((params.DEPLOYMENT_TYPE in ['application-only', 'full-deployment']) && !params.DESTROY_INFRASTRUCTURE) {
+                        def instanceIp = env.INSTANCE_IP ?: bat(script: 'cd terraform && terraform output -raw instance_ip', returnStdout: true).trim()
+                        def instanceId = bat(script: 'cd terraform && terraform output -raw instance_id', returnStdout: true).trim()
                         
-                        def instanceId = bat(
-                            script: 'cd terraform && terraform output -raw instance_id',
-                            returnStdout: true
-                        ).trim()
-                        
-                        // Clean up the values (remove any command prompt artifacts)
                         instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
                         instanceId = instanceId.replaceAll(/.*?(i-[a-z0-9]+).*/, '$1')
                         
                         env.INSTANCE_IP = instanceIp
                         env.INSTANCE_ID = instanceId
-                        
                         echo "Deploying to instance ${instanceId} at IP ${instanceIp}"
                         
-                        // Deploy to remote instance using AWS Systems Manager
-                        bat '''
-                            REM Deploy application using AWS Systems Manager
-                            aws ssm send-command --instance-ids %INSTANCE_ID% --document-name "AWS-RunShellScript" --parameters "commands=['cd /home/ubuntu', 'sudo docker-compose down || true', 'sudo docker-compose pull || true', 'export WEBSOCKET_URL=ws://%INSTANCE_IP%:8181', 'sudo docker-compose up -d']" --region %AWS_DEFAULT_REGION%
-                            
-                            REM Wait for command to complete
-                            timeout 60
-                        '''
+                        bat """
+                            aws ssm send-command ^
+                                --instance-ids %INSTANCE_ID% ^
+                                --document-name "AWS-RunShellScript" ^
+                                --parameters "commands=['cd /home/ubuntu', 'sudo docker-compose down || true', 'sudo docker-compose pull || true', 'export WEBSOCKET_URL=ws://%INSTANCE_IP%:8181', 'sudo docker-compose up -d']" ^
+                                --region %AWS_DEFAULT_REGION%
+                        """
                     }
                 }
             }
@@ -197,27 +191,15 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        // Use the instance IP from environment variable if available, otherwise get it from terraform
-                        def instanceIp = env.INSTANCE_IP ?: bat(
-                            script: 'cd terraform && terraform output -raw instance_ip',
-                            returnStdout: true
-                        ).trim()
-                        
-                        // Clean up the IP if needed
+                    if ((params.DEPLOYMENT_TYPE in ['application-only', 'full-deployment']) && !params.DESTROY_INFRASTRUCTURE) {
+                        def instanceIp = env.INSTANCE_IP ?: bat(script: 'cd terraform && terraform output -raw instance_ip', returnStdout: true).trim()
                         instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
                         env.INSTANCE_IP = instanceIp
-                        
                         echo "Performing health checks on instance ${instanceIp}"
                         
                         bat """
-                            echo Performing health checks...
-                            
-                            REM Check frontend
                             powershell -Command "try { Invoke-WebRequest -Uri 'http://${instanceIp}:5173' -TimeoutSec 10 | Out-Null; Write-Host 'Frontend is healthy' } catch { Write-Host 'Frontend check failed'; exit 1 }"
-                            
-                            REM Check backend WebSocket
-                            powershell -Command "for (`$i=0; `$i -lt 5; `$i++) { try { `$tcp = New-Object System.Net.Sockets.TcpClient; `$tcp.Connect('${instanceIp}', 8181); `$tcp.Close(); Write-Host 'Backend is healthy'; break } catch { Write-Host 'Waiting for backend...'; Start-Sleep 2 } }"
+                            powershell -Command "for (\$i=0; \$i -lt 5; \$i++) { try { \$tcp = New-Object System.Net.Sockets.TcpClient; \$tcp.Connect('${instanceIp}', 8181); \$tcp.Close(); Write-Host 'Backend is healthy'; break } catch { Write-Host 'Waiting for backend...'; Start-Sleep -Seconds 2 } }"
                         """
                     }
                 }
@@ -228,15 +210,9 @@ pipeline {
     post {
         always {
             script {
-                if (!params.DESTROY_INFRASTRUCTURE && (params.DEPLOYMENT_TYPE == 'full-deployment' || params.DEPLOYMENT_TYPE == 'infrastructure-only')) {
-                    def instanceIp = env.INSTANCE_IP ?: bat(
-                        script: 'cd terraform && terraform output -raw instance_ip 2>nul || echo N/A',
-                        returnStdout: true
-                    ).trim()
-                    
-                    // Clean up the IP if needed
+                if (!params.DESTROY_INFRASTRUCTURE && (params.DEPLOYMENT_TYPE in ['full-deployment', 'infrastructure-only'])) {
+                    def instanceIp = env.INSTANCE_IP ?: bat(script: 'cd terraform && terraform output -raw instance_ip 2>nul || echo N/A', returnStdout: true).trim()
                     instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
-                    
                     echo """
                     ========================================
                     DEPLOYMENT SUMMARY
@@ -258,13 +234,12 @@ pipeline {
         failure {
             echo 'Deployment failed!'
             script {
-                if (params.DEPLOYMENT_TYPE == 'full-deployment' || params.DEPLOYMENT_TYPE == 'infrastructure-only') {
+                if (params.DEPLOYMENT_TYPE in ['full-deployment', 'infrastructure-only']) {
                     echo 'Consider running cleanup or checking Terraform state'
                 }
             }
         }
         cleanup {
-            // Clean up any temporary files
             bat 'del tfplan destroy.tfplan .env 2>nul || echo Files not found'
         }
     }
