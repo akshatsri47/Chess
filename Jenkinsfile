@@ -28,8 +28,8 @@ pipeline {
     }
 
     triggers {
-        githubPush()
-    }
+    pollSCM('H/2 * * * *') // poll every 2 minutes
+}
 
     stages {
 
