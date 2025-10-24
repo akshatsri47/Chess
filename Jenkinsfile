@@ -117,31 +117,34 @@ pipeline {
             }
         }
 
-        stage('Wait for Instance') {
-            steps {
-                script {
-                    if ((params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        def instanceIp = bat(
-                            script: 'cd terraform && terraform output -raw instance_ip',
-                            returnStdout: true
-                        ).trim()
-                        
-                        // Clean up the IP
-                        instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
-                        env.INSTANCE_IP = instanceIp
-                        env.WEBSOCKET_URL = "ws://${instanceIp}:8181"
+       stage('Wait for Instance') {
+    steps {
+        script {
+            if ((params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
+                dir('terraform') {
+                    def instanceIp = bat(
+                        script: 'terraform output -raw instance_ip',
+                        returnStdout: true
+                    ).trim()
+                    
+                    // Clean up the IP
+                    instanceIp = instanceIp.replaceAll(/[^0-9.]/, '')
+                    env.INSTANCE_IP = instanceIp
+                    env.WEBSOCKET_URL = "ws://${instanceIp}:8181"
 
-                        echo "Waiting for instance ${instanceIp} to be ready..."
-                        
-                        // Inline PowerShell loop with proper escaping
-                        bat """
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-"\$i=0; while (\$i -lt 30) { try { Invoke-WebRequest -Uri 'http://${instanceIp}:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance... (attempt ' + (\$i+1) + '/30)'; Start-Sleep -Seconds 10; \$i++ } }"
+                    echo "Waiting for instance ${instanceIp} to be ready..."
+                    
+                    // Use a proper batch script with the IP variable set
+                    bat """
+@echo off
+set INSTANCE_IP=${instanceIp}
+powershell -NoProfile -ExecutionPolicy Bypass -Command "\$i=0; while (\$i -lt 30) { try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance... (attempt ' + (\$i+1) + '/30)'; Start-Sleep -Seconds 10; \$i++ } }"
 """
-                    }
                 }
             }
         }
+    }
+}
 
         stage('Build Docker Images') {
             steps {
