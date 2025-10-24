@@ -14,17 +14,14 @@ provider "aws" {
   secret_key = var.aws_secret_key
 }
 
-# Using specific Ubuntu AMI ID
 locals {
   ami_id = "ami-0036347a8a8be83f1"
 }
 
-# Security Group for Chess Application
 resource "aws_security_group" "chess_sg" {
   name_prefix = "chess-${var.environment}-"
   description = "Security group for Chess application"
 
-  # SSH access
   ingress {
     from_port   = 22
     to_port     = 22
@@ -32,7 +29,6 @@ resource "aws_security_group" "chess_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Frontend port
   ingress {
     from_port   = 5173
     to_port     = 5173
@@ -40,7 +36,6 @@ resource "aws_security_group" "chess_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Backend WebSocket port
   ingress {
     from_port   = 8181
     to_port     = 8181
@@ -48,7 +43,6 @@ resource "aws_security_group" "chess_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # All outbound traffic
   egress {
     from_port   = 0
     to_port     = 0
@@ -62,7 +56,6 @@ resource "aws_security_group" "chess_sg" {
   }
 }
 
-# IAM Role for EC2 Instance
 resource "aws_iam_role" "chess_instance_role" {
   name = "chess-${var.environment}-instance-role"
 
@@ -72,9 +65,7 @@ resource "aws_iam_role" "chess_instance_role" {
       {
         Action = "sts:AssumeRole"
         Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
+        Principal = { Service = "ec2.amazonaws.com" }
       }
     ]
   })
@@ -85,13 +76,11 @@ resource "aws_iam_role" "chess_instance_role" {
   }
 }
 
-# Attach SSM policy to the role
 resource "aws_iam_role_policy_attachment" "chess_ssm_policy" {
   role       = aws_iam_role.chess_instance_role.name
   policy_arn = "arn:aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# Instance profile
 resource "aws_iam_instance_profile" "chess_instance_profile" {
   name = "chess-${var.environment}-instance-profile"
   role = aws_iam_role.chess_instance_role.name
@@ -102,7 +91,6 @@ resource "aws_iam_instance_profile" "chess_instance_profile" {
   }
 }
 
-# EC2 Instance
 resource "aws_instance" "chess_app" {
   ami                    = local.ami_id
   instance_type          = var.instance_type
@@ -113,11 +101,9 @@ resource "aws_instance" "chess_app" {
     #!/bin/bash
     set -e
 
-    # Update system
     sudo yum update -y
     sudo yum install -y docker git
 
-    # Start Docker
     sudo systemctl start docker
     sudo systemctl enable docker
 
@@ -125,16 +111,13 @@ resource "aws_instance" "chess_app" {
     curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
 
-    # Clone your Chess repository
     git clone ${var.git_repo} /home/ec2-user/Chess
     cd /home/ec2-user/Chess
     git checkout ${var.branch}
 
-    # Build and start the application
     sudo /usr/local/bin/docker-compose build
     sudo /usr/local/bin/docker-compose up -d
 
-    # Log completion
     echo "$(date): User data script completed" >> /var/log/user-data.log
   EOF
 
@@ -151,7 +134,6 @@ resource "aws_instance" "chess_app" {
   }
 }
 
-# Elastic IP for consistent IP address
 resource "aws_eip" "chess_eip" {
   instance = aws_instance.chess_app.id
   domain   = "vpc"
@@ -162,7 +144,7 @@ resource "aws_eip" "chess_eip" {
   }
 }
 
-# Outputs
+# Only define outputs once here
 output "instance_ip" {
   description = "Public IP address of the Chess application instance"
   value       = aws_eip.chess_eip.public_ip
@@ -181,4 +163,24 @@ output "frontend_url" {
 output "backend_websocket_url" {
   description = "Backend WebSocket URL"
   value       = "ws://${aws_eip.chess_eip.public_ip}:8181"
+}
+
+output "security_group_id" {
+  description = "ID of the security group"
+  value       = aws_security_group.chess_sg.id
+}
+
+output "ec2_connect_command" {
+  description = "AWS EC2 Instance Connect command"
+  value       = "aws ec2-instance-connect send-ssh-public-key --instance-id ${aws_instance.chess_app.id} --instance-os-user ec2-user --ssh-public-key file://~/.ssh/id_rsa.pub --region ${var.region}"
+}
+
+output "aws_console_url" {
+  description = "AWS Console URL for this instance"
+  value       = "https://console.aws.amazon.com/ec2/v2/home?region=${var.region}#ConnectToInstance:instanceId=${aws_instance.chess_app.id}"
+}
+
+output "environment" {
+  description = "Environment name"
+  value       = var.environment
 }
