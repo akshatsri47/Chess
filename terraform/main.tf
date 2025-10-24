@@ -114,24 +114,49 @@ resource "aws_instance" "chess_app" {
  user_data = <<-EOF
     #!/bin/bash
     set -e
+    LOGFILE="/var/log/user-data.log"
+    echo "==== User Data Script Started at $(date) ====" >> $LOGFILE 2>&1
 
-    sudo yum update -y
-    sudo yum install -y docker git
+    # Update system
+    echo "Updating system..." >> $LOGFILE 2>&1
+    apt-get update -y >> $LOGFILE 2>&1
+    apt-get upgrade -y >> $LOGFILE 2>&1
 
-    sudo systemctl start docker
-    sudo systemctl enable docker
+    # Install Docker
+    echo "Installing Docker..." >> $LOGFILE 2>&1
+    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release >> $LOGFILE 2>&1
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg >> $LOGFILE 2>&1
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    apt-get update -y >> $LOGFILE 2>&1
+    apt-get install -y docker-ce docker-ce-cli containerd.io >> $LOGFILE 2>&1
 
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    # Start Docker
+    systemctl enable docker >> $LOGFILE 2>&1
+    systemctl start docker >> $LOGFILE 2>&1
+
+    # Install Docker Compose
+    echo "Installing Docker Compose..." >> $LOGFILE 2>&1
+    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose >> $LOGFILE 2>&1
     chmod +x /usr/local/bin/docker-compose
 
-    git clone ${var.git_repo} /home/ec2-user/Chess
-    cd /home/ec2-user/Chess
-    git checkout ${var.branch}
+    # Add ubuntu user to docker group
+    usermod -aG docker ubuntu
 
-    sudo /usr/local/bin/docker-compose build
-    sudo /usr/local/bin/docker-compose up -d
+    # Clone Chess repo
+    echo "Cloning repository..." >> $LOGFILE 2>&1
+    APP_DIR="/home/ubuntu/Chess"
+    mkdir -p $APP_DIR
+    git clone ${var.git_repo} $APP_DIR >> $LOGFILE 2>&1
+    cd $APP_DIR
+    git checkout ${var.branch} >> $LOGFILE 2>&1
+    chown -R ubuntu:ubuntu $APP_DIR
 
-    echo "$(date): User data script completed" >> /var/log/user-data.log
+    # Build and start the application
+    echo "Starting Chess app..." >> $LOGFILE 2>&1
+    sudo -u ubuntu docker-compose build >> $LOGFILE 2>&1
+    sudo -u ubuntu docker-compose up -d >> $LOGFILE 2>&1
+
+    echo "==== User Data Script Completed at $(date) ====" >> $LOGFILE 2>&1
   EOF
 
 
