@@ -117,65 +117,34 @@ pipeline {
             }
         }
 
-     stage('Wait for Instance') {
+       stage('Wait for Instance') {
     steps {
         script {
             if ((params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
                 dir('terraform') {
-                    // Get the instance IP from Terraform output
                     def instanceIp = bat(
                         script: 'terraform output -raw instance_ip',
                         returnStdout: true
                     ).trim()
+                    
+                    // Clean up the IP
                     instanceIp = instanceIp.replaceAll(/[^0-9.]/, '')
                     env.INSTANCE_IP = instanceIp
                     env.WEBSOCKET_URL = "ws://${instanceIp}:8181"
 
                     echo "Waiting for instance ${instanceIp} to be ready..."
-
-                    // Use PowerShell to check HTTP and WebSocket ports
+                    
+                    // Use a proper batch script with the IP variable set
                     bat """
-powershell -NoProfile -ExecutionPolicy Bypass -Command "
-\$INSTANCE_IP='${instanceIp}';
-\$maxAttempts=30;
-\$attempt=0;
-
-while (\$attempt -lt \$maxAttempts) {
-    \$frontendReady = \$false;
-    \$backendReady = \$false;
-
-    try {
-        Invoke-WebRequest -Uri \"http://\$INSTANCE_IP:5173\" -TimeoutSec 5 | Out-Null;
-        \$frontendReady = \$true;
-    } catch {}
-
-    try {
-        \$tcp = New-Object System.Net.Sockets.TcpClient;
-        \$tcp.Connect(\$INSTANCE_IP, 8181);
-        \$tcp.Close();
-        \$backendReady = \$true;
-    } catch {}
-
-    if (\$frontendReady -and \$backendReady) {
-        Write-Host 'Instance is ready! Frontend and backend are responding.';
-        exit 0;
-    } else {
-        Write-Host \"Waiting for instance... (attempt \$([int]\$attempt+1)/\$maxAttempts)\";
-        Start-Sleep -Seconds 10;
-        \$attempt++;
-    }
-}
-
-Write-Host 'Instance did not become ready in time';
-exit 1
-"
+@echo off
+set INSTANCE_IP=${instanceIp}
+powershell -NoProfile -ExecutionPolicy Bypass -Command "\$i=0; while (\$i -lt 30) { try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance... (attempt ' + (\$i+1) + '/30)'; Start-Sleep -Seconds 10; \$i++ } }"
 """
                 }
             }
         }
     }
 }
-
 
         stage('Build Docker Images') {
             steps {
