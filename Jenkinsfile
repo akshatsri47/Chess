@@ -127,12 +127,15 @@ pipeline {
                             returnStdout: true
                         ).trim()
                         
+                        // Clean up the IP (remove any command prompt artifacts)
+                        instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
+                        
                         env.INSTANCE_IP = instanceIp
                         echo "Waiting for instance ${instanceIp} to be ready..."
                         
-                        // Wait for instance to be ready
+                        // Wait for instance to be ready using a proper PowerShell command
                         bat '''
-                            powershell -Command "for ($i=0; $i -lt 30; $i++) { try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 5 | Out-Null; break } catch { Write-Host 'Waiting for application to start...'; Start-Sleep 10 } }"
+                            powershell -Command "for ($i=0; $i -lt 30; $i++) { try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance to start... (attempt ' + ($i+1) + '/30)'; Start-Sleep 10 } }"
                         '''
                     }
                 }
@@ -158,7 +161,7 @@ pipeline {
             steps {
                 script {
                     if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        // Load instance IP and ID
+                        // Load instance IP and ID from terraform output
                         def instanceIp = bat(
                             script: 'cd terraform && terraform output -raw instance_ip',
                             returnStdout: true
@@ -169,7 +172,14 @@ pipeline {
                             returnStdout: true
                         ).trim()
                         
+                        // Clean up the values (remove any command prompt artifacts)
+                        instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
+                        instanceId = instanceId.replaceAll(/.*?(i-[a-z0-9]+).*/, '$1')
+                        
+                        env.INSTANCE_IP = instanceIp
                         env.INSTANCE_ID = instanceId
+                        
+                        echo "Deploying to instance ${instanceId} at IP ${instanceIp}"
                         
                         // Deploy to remote instance using AWS Systems Manager
                         bat '''
@@ -188,10 +198,17 @@ pipeline {
             steps {
                 script {
                     if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        def instanceIp = bat(
+                        // Use the instance IP from environment variable if available, otherwise get it from terraform
+                        def instanceIp = env.INSTANCE_IP ?: bat(
                             script: 'cd terraform && terraform output -raw instance_ip',
                             returnStdout: true
                         ).trim()
+                        
+                        // Clean up the IP if needed
+                        instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
+                        env.INSTANCE_IP = instanceIp
+                        
+                        echo "Performing health checks on instance ${instanceIp}"
                         
                         bat '''
                             echo Performing health checks...
@@ -212,10 +229,13 @@ pipeline {
         always {
             script {
                 if (!params.DESTROY_INFRASTRUCTURE && (params.DEPLOYMENT_TYPE == 'full-deployment' || params.DEPLOYMENT_TYPE == 'infrastructure-only')) {
-                    def instanceIp = bat(
+                    def instanceIp = env.INSTANCE_IP ?: bat(
                         script: 'cd terraform && terraform output -raw instance_ip 2>nul || echo N/A',
                         returnStdout: true
                     ).trim()
+                    
+                    // Clean up the IP if needed
+                    instanceIp = instanceIp.replaceAll(/.*?(\d+\.\d+\.\d+\.\d+).*/, '$1')
                     
                     echo """
                     ========================================
