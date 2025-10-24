@@ -133,10 +133,10 @@ pipeline {
                         env.INSTANCE_IP = instanceIp
                         echo "Waiting for instance ${instanceIp} to be ready..."
                         
-                        // Wait for instance to be ready using a proper PowerShell command
-                        bat '''
-                            powershell -Command "for ($i=0; $i -lt 30; $i++) { try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance to start... (attempt ' + ($i+1) + '/30)'; Start-Sleep 10 } }"
-                        '''
+                        // Wait for instance to be ready using PowerShell with the actual IP
+                        bat """
+                            powershell -Command "for (`$i=0; `$i -lt 30; `$i++) { try { Invoke-WebRequest -Uri 'http://${instanceIp}:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance to start... (attempt ' + (`$i+1) + '/30)'; Start-Sleep 10 } }"
+                        """
                     }
                 }
             }
@@ -210,15 +210,15 @@ pipeline {
                         
                         echo "Performing health checks on instance ${instanceIp}"
                         
-                        bat '''
+                        bat """
                             echo Performing health checks...
                             
                             REM Check frontend
-                            powershell -Command "try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 10 | Out-Null; Write-Host 'Frontend is healthy' } catch { Write-Host 'Frontend check failed'; exit 1 }"
+                            powershell -Command "try { Invoke-WebRequest -Uri 'http://${instanceIp}:5173' -TimeoutSec 10 | Out-Null; Write-Host 'Frontend is healthy' } catch { Write-Host 'Frontend check failed'; exit 1 }"
                             
                             REM Check backend WebSocket
-                            powershell -Command "for ($i=0; $i -lt 5; $i++) { try { $tcp = New-Object System.Net.Sockets.TcpClient; $tcp.Connect('%INSTANCE_IP%', 8181); $tcp.Close(); Write-Host 'Backend is healthy'; break } catch { Write-Host 'Waiting for backend...'; Start-Sleep 2 } }"
-                        '''
+                            powershell -Command "for (`$i=0; `$i -lt 5; `$i++) { try { `$tcp = New-Object System.Net.Sockets.TcpClient; `$tcp.Connect('${instanceIp}', 8181); `$tcp.Close(); Write-Host 'Backend is healthy'; break } catch { Write-Host 'Waiting for backend...'; Start-Sleep 2 } }"
+                        """
                     }
                 }
             }
