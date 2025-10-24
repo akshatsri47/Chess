@@ -116,14 +116,18 @@ echo INSTANCE_IP=%INSTANCE_IP% > .env
 echo WEBSOCKET_URL=ws://%INSTANCE_IP%:8181 >> .env
 echo ENVIRONMENT=%ENVIRONMENT% >> .env
 
-REM Copy files to instance
-echo %BLUE%[INFO]%NC% Copying files to instance...
-scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%INSTANCE_IP%:/home/ubuntu/
-scp -o StrictHostKeyChecking=no .env ubuntu@%INSTANCE_IP%:/home/ubuntu/ 2>nul || echo File not found
+REM Get instance ID
+cd /d "%PROJECT_DIR%\%TERRAFORM_DIR%"
+for /f "tokens=*" %%i in ('terraform output -raw instance_id') do set INSTANCE_ID=%%i
+cd /d "%PROJECT_DIR%"
 
-REM Deploy on instance
-echo %BLUE%[INFO]%NC% Deploying application on instance...
-ssh -o StrictHostKeyChecking=no ubuntu@%INSTANCE_IP% "cd /home/ubuntu && export WEBSOCKET_URL=ws://%INSTANCE_IP%:8181 && sudo docker-compose down || true && sudo docker-compose pull || true && sudo docker-compose up -d"
+REM Deploy on instance using AWS Systems Manager
+echo %BLUE%[INFO]%NC% Deploying application on instance using AWS Systems Manager...
+aws ssm send-command --instance-ids %INSTANCE_ID% --document-name "AWS-RunShellScript" --parameters "commands=['cd /home/ubuntu', 'sudo docker-compose down || true', 'sudo docker-compose pull || true', 'export WEBSOCKET_URL=ws://%INSTANCE_IP%:8181', 'sudo docker-compose up -d']" --region us-east-1
+
+REM Wait for deployment to complete
+echo %BLUE%[INFO]%NC% Waiting for deployment to complete...
+timeout 60
 
 echo %GREEN%[SUCCESS]%NC% Application deployed successfully
 
@@ -152,7 +156,7 @@ echo Deployment Type: %DEPLOYMENT_TYPE%
 echo Instance IP: %INSTANCE_IP%
 echo Frontend URL: http://%INSTANCE_IP%:5173
 echo Backend WebSocket: ws://%INSTANCE_IP%:8181
-echo SSH Command: ssh -i ~/.ssh/chess-%ENVIRONMENT%-key.pem ubuntu@%INSTANCE_IP%
+echo AWS Console: https://console.aws.amazon.com/ec2/v2/home?region=us-east-1#ConnectToInstance:instanceId=%INSTANCE_ID%
 echo ========================================
 echo.
 

@@ -39,10 +39,7 @@ variable "volume_size" {
   default     = 20
 }
 
-variable "public_key" {
-  description = "Public key for SSH access"
-  type        = string
-}
+# SSH key variable removed - using EC2 Instance Connect instead
 
 variable "git_repo" {
   description = "Git repository URL"

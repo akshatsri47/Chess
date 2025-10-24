@@ -20,7 +20,8 @@ The deployment pipeline consists of:
 ### 2. AWS Configuration
 - AWS account with appropriate permissions
 - EC2, VPC, and Security Group access
-- SSH key pair for instance access
+- AWS Systems Manager (SSM) access for deployment
+- IAM role with SSM permissions for EC2 instances
 
 ### 3. Required Tools
 - Terraform >= 1.0
@@ -43,16 +44,10 @@ aws_access_key = "your-aws-access-key"
 aws_secret_key = "your-aws-secret-key"
 region        = "us-east-1"
 environment   = "dev"
-public_key    = "ssh-rsa AAAAB3NzaC1yc2E... your-email@example.com"
+# Note: No SSH key required - using AWS Systems Manager
 ```
 
-### 2. Generate SSH Key Pair
-
-```bash
-ssh-keygen -t rsa -b 4096 -C "your-email@example.com" -f ~/.ssh/chess-dev-key
-```
-
-### 3. Configure Jenkins Credentials
+### 2. Configure Jenkins Credentials
 
 In Jenkins, add the following credentials:
 - `aws-access-key`: Your AWS access key

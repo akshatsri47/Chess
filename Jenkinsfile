@@ -158,20 +158,26 @@ pipeline {
             steps {
                 script {
                     if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
-                        // Load instance IP
+                        // Load instance IP and ID
                         def instanceIp = bat(
                             script: 'cd terraform && terraform output -raw instance_ip',
                             returnStdout: true
                         ).trim()
                         
-                        // Deploy to remote instance
+                        def instanceId = bat(
+                            script: 'cd terraform && terraform output -raw instance_id',
+                            returnStdout: true
+                        ).trim()
+                        
+                        env.INSTANCE_ID = instanceId
+                        
+                        // Deploy to remote instance using AWS Systems Manager
                         bat '''
-                            REM Copy docker-compose and .env to instance
-                            scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@%INSTANCE_IP%:/home/ubuntu/
-                            scp -o StrictHostKeyChecking=no .env ubuntu@%INSTANCE_IP%:/home/ubuntu/ 2>nul || echo File not found
+                            REM Deploy application using AWS Systems Manager
+                            aws ssm send-command --instance-ids %INSTANCE_ID% --document-name "AWS-RunShellScript" --parameters "commands=['cd /home/ubuntu', 'sudo docker-compose down || true', 'sudo docker-compose pull || true', 'export WEBSOCKET_URL=ws://%INSTANCE_IP%:8181', 'sudo docker-compose up -d']" --region %AWS_DEFAULT_REGION%
                             
-                            REM Deploy application on remote instance
-                            ssh -o StrictHostKeyChecking=no ubuntu@%INSTANCE_IP% "cd /home/ubuntu && export WEBSOCKET_URL=ws://%INSTANCE_IP%:8181 && sudo docker-compose down || true && sudo docker-compose pull || true && sudo docker-compose up -d"
+                            REM Wait for command to complete
+                            timeout 60
                         '''
                     }
                 }

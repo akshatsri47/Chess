@@ -73,18 +73,54 @@ resource "aws_security_group" "chess_sg" {
   }
 }
 
-# Key Pair for SSH access
-resource "aws_key_pair" "chess_key" {
-  key_name   = "chess-${var.environment}-key"
-  public_key = var.public_key
+# No SSH key pair needed - using EC2 Instance Connect
+
+# IAM Role for EC2 Instance
+resource "aws_iam_role" "chess_instance_role" {
+  name = "chess-${var.environment}-instance-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "chess-${var.environment}-instance-role"
+    Environment = var.environment
+  }
+}
+
+# Attach SSM policy to the role
+resource "aws_iam_role_policy_attachment" "chess_ssm_policy" {
+  role       = aws_iam_role.chess_instance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Instance profile
+resource "aws_iam_instance_profile" "chess_instance_profile" {
+  name = "chess-${var.environment}-instance-profile"
+  role = aws_iam_role.chess_instance_role.name
+
+  tags = {
+    Name        = "chess-${var.environment}-instance-profile"
+    Environment = var.environment
+  }
 }
 
 # EC2 Instance
 resource "aws_instance" "chess_app" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
-  key_name              = aws_key_pair.chess_key.key_name
   vpc_security_group_ids = [aws_security_group.chess_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.chess_instance_profile.name
 
   user_data = templatefile("${path.module}/user_data.sh", {
     environment = var.environment

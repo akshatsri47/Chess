@@ -10,9 +10,8 @@ environment   = "dev"  # dev, staging, or prod
 instance_type = "t2.micro"
 volume_size   = 20
 
-# SSH Key (generate with: ssh-keygen -t rsa -b 4096 -C "your-email@example.com")
-public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQ... your-email@example.com"
-
 # Git Configuration
 git_repo = "https://github.com/akshatsri47/Chess.git"
 branch   = "main"
+
+# Note: No SSH key required - using AWS Systems Manager for deployment

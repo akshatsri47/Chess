@@ -25,9 +25,14 @@ output "backend_websocket_url" {
   value       = "ws://${aws_eip.chess_eip.public_ip}:8181"
 }
 
-output "ssh_command" {
-  description = "SSH command to connect to the instance"
-  value       = "ssh -i ~/.ssh/chess-${var.environment}-key.pem ubuntu@${aws_eip.chess_eip.public_ip}"
+output "ec2_connect_command" {
+  description = "AWS EC2 Instance Connect command to connect to the instance"
+  value       = "aws ec2-instance-connect send-ssh-public-key --instance-id ${aws_instance.chess_app.id} --instance-os-user ubuntu --ssh-public-key file://~/.ssh/id_rsa.pub --region ${var.region}"
+}
+
+output "aws_console_url" {
+  description = "AWS Console URL to connect to the instance"
+  value       = "https://console.aws.amazon.com/ec2/v2/home?region=${var.region}#ConnectToInstance:instanceId=${aws_instance.chess_app.id}"
 }
 
 output "environment" {
