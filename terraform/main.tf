@@ -117,47 +117,47 @@ resource "aws_instance" "chess_app" {
     LOGFILE="/var/log/user-data.log"
     echo "==== User Data Script Started at $(date) ====" >> $LOGFILE 2>&1
 
-    # Update system
-    echo "Updating system..." >> $LOGFILE 2>&1
-    apt-get update -y >> $LOGFILE 2>&1
-    apt-get upgrade -y >> $LOGFILE 2>&1
+    # Update package lists
+    echo "Updating package lists..." >> $LOGFILE 2>&1
+    sudo apt update -y >> $LOGFILE 2>&1
+
+    # Install prerequisites and git
+    echo "Installing prerequisites and git..." >> $LOGFILE 2>&1
+    sudo apt install -y apt-transport-https ca-certificates curl software-properties-common git >> $LOGFILE 2>&1
+
+    # Add Docker GPG key and repository
+    echo "Adding Docker GPG key and repository..." >> $LOGFILE 2>&1
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg >> $LOGFILE 2>&1
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
     # Install Docker
     echo "Installing Docker..." >> $LOGFILE 2>&1
-    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release >> $LOGFILE 2>&1
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg >> $LOGFILE 2>&1
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    apt-get update -y >> $LOGFILE 2>&1
-    apt-get install -y docker-ce docker-ce-cli containerd.io >> $LOGFILE 2>&1
+    sudo apt update -y >> $LOGFILE 2>&1
+    sudo apt install -y docker-ce docker-ce-cli containerd.io >> $LOGFILE 2>&1
 
-    # Start Docker
-    systemctl enable docker >> $LOGFILE 2>&1
-    systemctl start docker >> $LOGFILE 2>&1
+    # Start and enable Docker
+    echo "Starting and enabling Docker..." >> $LOGFILE 2>&1
+    sudo systemctl start docker >> $LOGFILE 2>&1
+    sudo systemctl enable docker >> $LOGFILE 2>&1
 
     # Install Docker Compose
     echo "Installing Docker Compose..." >> $LOGFILE 2>&1
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose >> $LOGFILE 2>&1
-    chmod +x /usr/local/bin/docker-compose
+    sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose >> $LOGFILE 2>&1
+    sudo chmod +x /usr/local/bin/docker-compose >> $LOGFILE 2>&1
 
-    # Add ubuntu user to docker group
-    usermod -aG docker ubuntu
+    # Clone Chess app repository
+    echo "Cloning Chess app repository..." >> $LOGFILE 2>&1
+    git clone https://github.com/akshatsri47/Chess.git /home/ubuntu/Chess >> $LOGFILE 2>&1
+    cd /home/ubuntu/Chess
 
-    # Clone Chess repo
-    echo "Cloning repository..." >> $LOGFILE 2>&1
-    APP_DIR="/home/ubuntu/Chess"
-    mkdir -p $APP_DIR
-    git clone ${var.git_repo} $APP_DIR >> $LOGFILE 2>&1
-    cd $APP_DIR
-    git checkout ${var.branch} >> $LOGFILE 2>&1
-    chown -R ubuntu:ubuntu $APP_DIR
-
-    # Build and start the application
-    echo "Starting Chess app..." >> $LOGFILE 2>&1
-    sudo -u ubuntu docker-compose build >> $LOGFILE 2>&1
-    sudo -u ubuntu docker-compose up -d >> $LOGFILE 2>&1
+    # Build and start Chess app
+    echo "Building and starting Chess app with Docker Compose..." >> $LOGFILE 2>&1
+    sudo docker-compose build >> $LOGFILE 2>&1
+    sudo docker-compose up -d >> $LOGFILE 2>&1
 
     echo "==== User Data Script Completed at $(date) ====" >> $LOGFILE 2>&1
-  EOF
+EOF
+
 
 
   root_block_device {

@@ -138,7 +138,7 @@ pipeline {
                     bat """
 @echo off
 set INSTANCE_IP=${instanceIp}
-powershell -NoProfile -ExecutionPolicy Bypass -Command "\$i=0; while (\$i -lt 10) { try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance... (attempt ' + (\$i+1) + '/30)'; Start-Sleep -Seconds 10; \$i++ } }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "\$i=0; while (\$i -lt 10) { try { Invoke-WebRequest -Uri 'http://%INSTANCE_IP%:5173' -TimeoutSec 5 | Out-Null; Write-Host 'Instance is ready!'; break } catch { Write-Host 'Waiting for instance... (attempt ' + (\$i+1) + '/10)'; Start-Sleep -Seconds 10; \$i++ } }"
 """
                 }
             }
