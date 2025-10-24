@@ -71,25 +71,21 @@ pipeline {
         }
 
         stage('Terraform Plan') {
-            when {
-                anyOf {
-                    params.DEPLOYMENT_TYPE == 'infrastructure-only'
-                    params.DEPLOYMENT_TYPE == 'full-deployment'
-                }
-            }
             steps {
-                dir('terraform') {
-                    script {
-                        if (params.DESTROY_INFRASTRUCTURE) {
-                            sh '''
-                                terraform init
-                                terraform plan -destroy -var="environment=${ENVIRONMENT}" -out=destroy.tfplan
-                            '''
-                        } else {
-                            sh '''
-                                terraform init
-                                terraform plan -var="environment=${ENVIRONMENT}" -out=tfplan
-                            '''
+                script {
+                    if (params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') {
+                        dir('terraform') {
+                            if (params.DESTROY_INFRASTRUCTURE) {
+                                sh '''
+                                    terraform init
+                                    terraform plan -destroy -var="environment=${ENVIRONMENT}" -out=destroy.tfplan
+                                '''
+                            } else {
+                                sh '''
+                                    terraform init
+                                    terraform plan -var="environment=${ENVIRONMENT}" -out=tfplan
+                                '''
+                            }
                         }
                     }
                 }
@@ -97,28 +93,24 @@ pipeline {
         }
 
         stage('Terraform Apply') {
-            when {
-                anyOf {
-                    params.DEPLOYMENT_TYPE == 'infrastructure-only'
-                    params.DEPLOYMENT_TYPE == 'full-deployment'
-                }
-            }
             steps {
-                dir('terraform') {
-                    script {
-                        if (params.DESTROY_INFRASTRUCTURE) {
-                            sh '''
-                                terraform apply -auto-approve destroy.tfplan
-                            '''
-                        } else {
-                            sh '''
-                                terraform apply -auto-approve tfplan
-                                
-                                # Get instance IP and set environment variable
-                                INSTANCE_IP=$(terraform output -raw instance_ip)
-                                echo "INSTANCE_IP=${INSTANCE_IP}" > ../.env
-                                echo "Instance IP: ${INSTANCE_IP}"
-                            '''
+                script {
+                    if (params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') {
+                        dir('terraform') {
+                            if (params.DESTROY_INFRASTRUCTURE) {
+                                sh '''
+                                    terraform apply -auto-approve destroy.tfplan
+                                '''
+                            } else {
+                                sh '''
+                                    terraform apply -auto-approve tfplan
+                                    
+                                    # Get instance IP and set environment variable
+                                    INSTANCE_IP=$(terraform output -raw instance_ip)
+                                    echo "INSTANCE_IP=${INSTANCE_IP}" > ../.env
+                                    echo "Instance IP: ${INSTANCE_IP}"
+                                '''
+                            }
                         }
                     }
                 }
@@ -126,119 +118,99 @@ pipeline {
         }
 
         stage('Wait for Instance') {
-            when {
-                anyOf {
-                    params.DEPLOYMENT_TYPE == 'infrastructure-only'
-                    params.DEPLOYMENT_TYPE == 'full-deployment'
-                }
-                not { params.DESTROY_INFRASTRUCTURE }
-            }
             steps {
                 script {
-                    // Load instance IP from terraform output
-                    def instanceIp = sh(
-                        script: 'cd terraform && terraform output -raw instance_ip',
-                        returnStdout: true
-                    ).trim()
-                    
-                    env.INSTANCE_IP = instanceIp
-                    echo "Waiting for instance ${instanceIp} to be ready..."
-                    
-                    // Wait for instance to be ready
-                    sh '''
-                        timeout 300 bash -c 'until curl -f http://'${INSTANCE_IP}':5173 > /dev/null 2>&1; do
-                            echo "Waiting for application to start..."
-                            sleep 10
-                        done'
-                    '''
+                    if ((params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
+                        // Load instance IP from terraform output
+                        def instanceIp = sh(
+                            script: 'cd terraform && terraform output -raw instance_ip',
+                            returnStdout: true
+                        ).trim()
+                        
+                        env.INSTANCE_IP = instanceIp
+                        echo "Waiting for instance ${instanceIp} to be ready..."
+                        
+                        // Wait for instance to be ready
+                        sh '''
+                            timeout 300 bash -c 'until curl -f http://'${INSTANCE_IP}':5173 > /dev/null 2>&1; do
+                                echo "Waiting for application to start..."
+                                sleep 10
+                            done'
+                        '''
+                    }
                 }
             }
         }
 
         stage('Build Docker Images') {
-            when {
-                anyOf {
-                    params.DEPLOYMENT_TYPE == 'application-only'
-                    params.DEPLOYMENT_TYPE == 'full-deployment'
-                }
-                not { params.DESTROY_INFRASTRUCTURE }
-            }
             steps {
                 script {
-                    // Build and tag images with commit hash
-                    sh '''
-                        docker-compose build --no-cache
-                        docker tag chess_frontend:latest chess_frontend:${GIT_COMMIT_SHORT}
-                        docker tag chess_backend:latest chess_backend:${GIT_COMMIT_SHORT}
-                    '''
+                    if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
+                        // Build and tag images with commit hash
+                        sh '''
+                            docker-compose build --no-cache
+                            docker tag chess_frontend:latest chess_frontend:${GIT_COMMIT_SHORT}
+                            docker tag chess_backend:latest chess_backend:${GIT_COMMIT_SHORT}
+                        '''
+                    }
                 }
             }
         }
 
         stage('Deploy Application') {
-            when {
-                anyOf {
-                    params.DEPLOYMENT_TYPE == 'application-only'
-                    params.DEPLOYMENT_TYPE == 'full-deployment'
-                }
-                not { params.DESTROY_INFRASTRUCTURE }
-            }
             steps {
                 script {
-                    // Load instance IP
-                    def instanceIp = sh(
-                        script: 'cd terraform && terraform output -raw instance_ip',
-                        returnStdout: true
-                    ).trim()
-                    
-                    // Deploy to remote instance
-                    sh '''
-                        # Copy docker-compose and .env to instance
-                        scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@${INSTANCE_IP}:/home/ubuntu/
-                        scp -o StrictHostKeyChecking=no .env ubuntu@${INSTANCE_IP}:/home/ubuntu/ 2>/dev/null || true
+                    if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
+                        // Load instance IP
+                        def instanceIp = sh(
+                            script: 'cd terraform && terraform output -raw instance_ip',
+                            returnStdout: true
+                        ).trim()
                         
-                        # Deploy application on remote instance
-                        ssh -o StrictHostKeyChecking=no ubuntu@${INSTANCE_IP} '
-                            cd /home/ubuntu
-                            export WEBSOCKET_URL=ws://'${INSTANCE_IP}':8181
-                            sudo docker-compose down || true
-                            sudo docker-compose pull || true
-                            sudo docker-compose up -d
-                        '
-                    '''
+                        // Deploy to remote instance
+                        sh '''
+                            # Copy docker-compose and .env to instance
+                            scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@${INSTANCE_IP}:/home/ubuntu/
+                            scp -o StrictHostKeyChecking=no .env ubuntu@${INSTANCE_IP}:/home/ubuntu/ 2>/dev/null || true
+                            
+                            # Deploy application on remote instance
+                            ssh -o StrictHostKeyChecking=no ubuntu@${INSTANCE_IP} '
+                                cd /home/ubuntu
+                                export WEBSOCKET_URL=ws://'${INSTANCE_IP}':8181
+                                sudo docker-compose down || true
+                                sudo docker-compose pull || true
+                                sudo docker-compose up -d
+                            '
+                        '''
+                    }
                 }
             }
         }
 
         stage('Health Check') {
-            when {
-                anyOf {
-                    params.DEPLOYMENT_TYPE == 'application-only'
-                    params.DEPLOYMENT_TYPE == 'full-deployment'
-                }
-                not { params.DESTROY_INFRASTRUCTURE }
-            }
             steps {
                 script {
-                    def instanceIp = sh(
-                        script: 'cd terraform && terraform output -raw instance_ip',
-                        returnStdout: true
-                    ).trim()
-                    
-                    sh '''
-                        echo "Performing health checks..."
+                    if ((params.DEPLOYMENT_TYPE == 'application-only' || params.DEPLOYMENT_TYPE == 'full-deployment') && !params.DESTROY_INFRASTRUCTURE) {
+                        def instanceIp = sh(
+                            script: 'cd terraform && terraform output -raw instance_ip',
+                            returnStdout: true
+                        ).trim()
                         
-                        # Check frontend
-                        curl -f http://${INSTANCE_IP}:5173 || exit 1
-                        echo "Frontend is healthy"
-                        
-                        # Check backend WebSocket
-                        timeout 10 bash -c 'until nc -z ${INSTANCE_IP} 8181; do
-                            echo "Waiting for backend..."
-                            sleep 2
-                        done'
-                        echo "Backend is healthy"
-                    '''
+                        sh '''
+                            echo "Performing health checks..."
+                            
+                            # Check frontend
+                            curl -f http://${INSTANCE_IP}:5173 || exit 1
+                            echo "Frontend is healthy"
+                            
+                            # Check backend WebSocket
+                            timeout 10 bash -c 'until nc -z ${INSTANCE_IP} 8181; do
+                                echo "Waiting for backend..."
+                                sleep 2
+                            done'
+                            echo "Backend is healthy"
+                        '''
+                    }
                 }
             }
         }
@@ -247,7 +219,7 @@ pipeline {
     post {
         always {
             script {
-                if (!params.DESTROY_INFRASTRUCTURE && (params.DEPLOYMENT_TYPE == 'infrastructure-only' || params.DEPLOYMENT_TYPE == 'full-deployment')) {
+                if (!params.DESTROY_INFRASTRUCTURE && (params.DEPLOYMENT_TYPE == 'full-deployment' || params.DEPLOYMENT_TYPE == 'infrastructure-only')) {
                     def instanceIp = sh(
                         script: 'cd terraform && terraform output -raw instance_ip 2>/dev/null || echo "N/A"',
                         returnStdout: true
@@ -285,4 +257,3 @@ pipeline {
         }
     }
 }
-
