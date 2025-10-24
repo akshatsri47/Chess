@@ -32,7 +32,7 @@ const WelcomePage = () => {
         sx={{ m: 2 }}
         onClick={() => navigate('/puzzle')}
       >
-        Solve Puzzles
+        Solve Puzzles AND LEARN chess
       </Button>
     </Box>
   );
