@@ -36,7 +36,7 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    env.GIT_COMMIT_SHORT = sh(
+                    env.GIT_COMMIT_SHORT = bat(
                         script: 'git rev-parse --short HEAD',
                         returnStdout: true
                     ).trim()
